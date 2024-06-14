@@ -21,7 +21,7 @@ def phase_corrector(V, coords, expected_wavelength, illumination_point):
     pulse_max_fw = V_fw > V_bw
     phase_sign = 1 - 2*pulse_max_fw
 
-    significant_phase = np.abs(phase_max_V) > np.pi/180
+    significant_phase = np.abs(phase_max_V) > np.pi/90
 
     # Calculate the phase correction (phase sign to select forward or backward)
     # phase_correction_fw = ((2*np.pi - phase_max_V)%(2*np.pi)) 

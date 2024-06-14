@@ -30,39 +30,39 @@ if __name__ == '__main__':
     # data_file = '2d_2_planes_left_right.hdf5'
     # src = '../nlos_dataset/mesh_R_256x256/front/'
     # data_file = 'data.hdf5'; switch_indices=lambda data: data.swapaxes(0, -1)
-    # src = '../nlos_dataset/'
-    # data_file = 'performat_letter4.hdf5'; 
+    src = '../nlos_dataset/'
+    data_file = 'performat_letter4.hdf5'; 
     # switch_indices=lambda data: np.moveaxis(data, 0, 2)
 
-    src = '../nlos_dataset/3d_small_planes/20240611-194813/'
-    data_file = 'plane1_z[2.5]_x[0.0]_rot[0].hdf5'
+    # src = '../nlos_dataset/3d_small_planes/20240611-194813/'
+    # data_file = 'plane1_z[2.5]_x[0.0]_rot[0].hdf5'
     # src = '../nlos_dataset/3d_small_planes/20240611-172843/'
     # data_file = 'plane1_z[1.0]_x[0.0]_rot[0].hdf5'
 
     # Volume definition 
-    delta_z = 0.001
-    z_begin = 1.
-    z_end = 3
+    delta_z = 0.0001
+    z_begin = 0.5
+    z_end = 1.5
     # PF filter definition
     starting_central_wavelength = 0.2
     ending_central_wavelength = 0.05
     n_pulses = 5
 
     # Number of threads
-    n_threads = 1
+    n_threads = 12
 
     z_grid = np.mgrid[z_begin:z_end:delta_z]
 
     full_path = src + data_file
     data = tal.io.read_capture(full_path)
 
-    medium_idx = data.H.shape[1]//2
-    data.H = data.H[:,medium_idx:-medium_idx+1,:]
-    # Capture grid
-    data.sensor_grid_xyz = data.sensor_grid_xyz[medium_idx:-medium_idx+1,:]
-    gt_medium_idx = data.hidden_depth_grid_xyz.shape[1]//2
-    data.hidden_depth_grid_xyz = data.hidden_depth_grid_xyz[gt_medium_idx:-gt_medium_idx+1,...]
-    data.hidden_depth_grid_normals = data.hidden_depth_grid_normals[gt_medium_idx:-gt_medium_idx+1,...]
+    # medium_idx = data.H.shape[1]//2
+    # data.H = data.H[:,medium_idx:-medium_idx+1,:]
+    # # Capture grid
+    # data.sensor_grid_xyz = data.sensor_grid_xyz[medium_idx:-medium_idx+1,:]
+    # gt_medium_idx = data.hidden_depth_grid_xyz.shape[1]//2
+    # data.hidden_depth_grid_xyz = data.hidden_depth_grid_xyz[gt_medium_idx:-gt_medium_idx+1,...]
+    # data.hidden_depth_grid_normals = data.hidden_depth_grid_normals[gt_medium_idx:-gt_medium_idx+1,...]
     # Illumination point
     xl = data.laser_grid_xyz[0,0]
 
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     s_pf_dense = time.time()
     pf_analysis = {}
     dense_V = phasor_fields_reconstruction(data, ending_central_wavelength, 
-                                           n_pulses, z_begin, z_end, 0.001, 
+                                           n_pulses, z_begin, z_end, delta_z, 
                                            xl, n_threads = n_threads, 
                                            analysis=pf_analysis)
     e_pf_dense = time.time()
@@ -96,9 +96,9 @@ if __name__ == '__main__':
 
 
     # Save the results
-    np.save('dense_reconstruction', dense_V)
-    np.save('adaptive_depth', max_coords_V)
-    np.save('adaptive_zero_phase', zero_phase_point)
+    np.save('dense_reconstruction_4r', dense_V)
+    np.save('adaptive_depth_4r', max_coords_V)
+    np.save('adaptive_zero_phase_4r', zero_phase_point)
 
     
     V_coords = np.array(np.meshgrid(data.sensor_grid_xyz[:,0,0],
@@ -110,19 +110,19 @@ if __name__ == '__main__':
 
 
     # Applies backprojection
-    # wl, weights, fH = phasor_fields_filter(ending_central_wavelength, 
-    #                                        n_pulses, data,False)
-    # filtered_H = np.sum(weights.reshape(-1,1,1,1)*fH[:,np.newaxis] * np.exp((2j*np.pi/wl.reshape(-1,1,1,1))*np.arange(data.H.shape[0]).reshape(-1,1,1)*data.delta_t), axis = 0)
-    # dense_V_bp = back_projection(V_coords, filtered_H, data.sensor_grid_xyz, 
-    #                             data.laser_grid_xyz, data.delta_t, 
-    #                             n_threads = n_threads)
-    # np.save('dense_reconstruction_bp', dense_V_bp)
+    wl, weights, fH = phasor_fields_filter(ending_central_wavelength, 
+                                           n_pulses, data,False)
+    filtered_H = np.sum(weights.reshape(-1,1,1,1)*fH[:,np.newaxis] * np.exp((2j*np.pi/wl.reshape(-1,1,1,1))*np.arange(data.H.shape[0]).reshape(-1,1,1)*data.delta_t), axis = 0)
+    dense_V_bp = back_projection(V_coords, filtered_H, data.sensor_grid_xyz, 
+                                data.laser_grid_xyz, data.delta_t, 
+                                n_threads = n_threads)
+    np.save('dense_reconstruction_bp_4r', dense_V_bp)
 
     plotter = StreakPlotter(V_coords, 'dense_reconstruction.npy', 
                                       'adaptive_depth.npy',
                                       'adaptive_zero_phase.npy',
                                       data.hidden_depth_grid_xyz)
-    plotter[0].plot()
+    plotter[:, 60].plot()
     # plotter = StreakPlotter(V_coords, 'results/256x256R/dense_reconstruction.npy', 
     #                                  'results/256x256R/adaptive_depth.npy',
     #                                 'results/256x256R/adaptive_zero_phase.npy')

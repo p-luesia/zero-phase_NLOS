@@ -5,8 +5,6 @@ from scipy.interpolate import RegularGridInterpolator
 
 import matplotlib
 
-matplotlib.use('svg')
-
 class StreakPlotter(object):
 
     class SubPlotter2D(object):
@@ -22,15 +20,18 @@ class StreakPlotter(object):
             self.ground_truth = ground_truth
             self.title = ''
             self.outputfile = 'reconstruction'
+            self.backend = 'svg'
             
         def set_backend(self, str):
             """
             Set the backend. See matplotlib.backends for more information
             """
-            matplotlib.use(str)
+            self.backend = str
 
 
         def plot(self):
+            og_backend = matplotlib.get_backend()
+            matplotlib.use(self.backend)
             # Plot the results
             min_x, min_y = self.coords[0,0]
             delta_x, delta_y = self.coords[1,1] - self.coords[0,0]
@@ -38,15 +39,17 @@ class StreakPlotter(object):
             plotify = lambda d: ((d[:, 0] - min_x) / delta_x,
                                  (d[:, 1] - min_y) / delta_y) 
             
-            max_V = max_dense_V_idx = np.argmax(self.dense_V, axis = 0)
+            max_dense_V_idx = np.argmax(self.dense_V, axis = 0)
             z_dense_V = self.coords[max_dense_V_idx, 
                                     np.arange(self.dense_V.shape[1])]  
             printable_max_V = plotify(z_dense_V)
-            # printable_max_V = plotify(self.adaptive_max_V)
+            printable_max_add_V = plotify(self.adaptive_max_V)
             printable_zpp = plotify(self.adaptive_zero_V)
             if self.ground_truth is not None:
-                interest_idx = np.arange(self.dense_V.shape[1])\
-                                [self.ground_truth > 0]
+                mid_gt = self.ground_truth.shape[0]//2
+                interest_idx = np.arange(mid_gt - 10, mid_gt + 11)
+                # interest_idx = np.arange(self.dense_V.shape[1])\
+                #                 [self.ground_truth > 0]
                 valid_ground_truth = self.ground_truth[interest_idx]
                 printable_gt = [interest_idx,
                                 (valid_ground_truth- min_y)\
@@ -63,28 +66,35 @@ class StreakPlotter(object):
 
 
             plt.figure()
-            fig, ax = plt.subplots(1,2, sharex=True, sharey=True, figsize=(8,20))
-            ax[0].set_title('Amplitude of the reconstruction')
+            fig, ax = plt.subplots(1,3, sharex=True, sharey=True, figsize=(8,20))
+            ax[0].set_title('Amplitude')
             ax[0].imshow(np.abs(self.dense_V), cmap = 'hot')
+            ytick_label = ax[0].get_yticks().astype(int) * delta_y + min_y
+            ax[0].set_yticklabels(["{:0.4f}".format(tick) for tick in ytick_label] )
             if self.ground_truth is not None:
                 ax[0].plot(printable_gt[0], printable_gt[1], color = 'purple', 
                            alpha = 0.9)
-            ax[0].plot(printable_zpp[0], printable_zpp[1], color = 'green', alpha = 0.6,
-                        label='Zero phase depth')
-            ax[0].plot(printable_max_V[0], printable_max_V[1], color = 'darkorange', 
-                    alpha = 0.6, label = 'Max in voxel depth')
-            ax[0].legend()
 
-            ax[1].set_title('Phase of the reconstruction')
+            ax[1].set_title('Phase')
             ax[1].imshow(np.angle(self.dense_V), cmap = 'bwr')
             if self.ground_truth is not None:
                 ax[1].plot(printable_gt[0], printable_gt[1], color = 'purple',
                            alpha = 0.9)
-            ax[1].plot(printable_zpp[0], printable_zpp[1], color = 'g', alpha = 0.6,
-                    label='Zero phase depth')
-            ax[1].plot(printable_max_V[0], printable_max_V[1], color = 'darkorange', 
-                    alpha = 0.6, label = 'Max in voxel depth')
-            ax[1].legend()
+
+
+            ax[2].set_title('Found surfaces')
+            if self.ground_truth is not None:
+                ax[2].plot(printable_gt[0], printable_gt[1], color = 'purple',
+                           alpha = 0.9, label= 'Ground truth')
+            ax[2].plot(printable_zpp[0], printable_zpp[1], color = 'g',
+                       alpha = 0.6, label='Zero phase depth')
+            ax[2].plot(printable_max_add_V[0], printable_max_add_V[1], 
+                       color = 'b', alpha = 0.6,
+                       label='Max in adaptative voxel depth')
+            ax[2].plot(printable_max_V[0], printable_max_V[1], 
+                       color = 'darkorange', alpha = 0.6,
+                       label = 'Max in voxel depth')
+            ax[2].legend()
 
 
             if self.ground_truth is not None:
@@ -94,6 +104,8 @@ class StreakPlotter(object):
             else:
                 fig.suptitle(self.title)
             plt.savefig(self.outputfile)
+
+            matplotlib.use(og_backend)
 
 
 
