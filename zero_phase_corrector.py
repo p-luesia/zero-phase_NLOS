@@ -96,6 +96,9 @@ def adaptive_z_reconstruction(data, starting_wavelength, final_wavelength,
             V = np.append(V, V_local, axis = 0)
             z_grid = np.append(z_grid, np.mgrid[z_b:z_e:delta_z_wl])
         
+        if np.max(V) == 0:
+            print('No geometry found!')
+            return (np.zeros(data.sensor_grid_xyz.shape),)*2
         coords = data.sensor_grid_xyz[np.newaxis, ...] + np.array([0,0,1.0])*z_grid.reshape(-1,1,1,1)
         max_coords, zero_phase_coords = phase_corrector(V, coords,
                                                         expected_wavelength, xl)
