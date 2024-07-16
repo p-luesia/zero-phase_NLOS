@@ -6,7 +6,15 @@ from RSD_propagator import RSD_kernel, point_to_point_propagator
 from functools import partial
 from tqdm import tqdm
 
+PF_by_point = False
 
+def set_by_point():
+    global PF_by_point
+    PF_by_point = True
+
+def set_planar_RSD():
+    global PF_by_point
+    PF_by_point = False
 
 def phasor_fields_filter(central_wavelength, n_pulses, tal_data, 
                          fourier_data = False, analysis={}):
@@ -45,8 +53,22 @@ def __reconstruct_pf_plane(RSD_prop, wavelengths, coords, xl, fH, freq_weights,
     return 0
 
 
+def __reconstruct_pf_plane_by_point(grid_coords, rec_coords, wavelengths, xl,
+                                    fH, freq_weights, image, grid_z, 
+                                    analysis = {}, idx_z = 0):
+    l2v_prop = point_to_point_propagator(rec_coords[idx_z], xl, wavelengths)
+    for it in np.ndindex(grid_coords.shape[:-1]):
+        xv = rec_coords[(idx_z,) + it]
+        s2v_prop = point_to_point_propagator(grid_coords, xv, wavelengths)
+        half_prop = np.sum(s2v_prop * fH, axis = tuple(range(1, fH.ndim )))
+        image[(idx_z,) + it] = np.sum(half_prop*l2v_prop[(slice(None),)+it]\
+                                      *freq_weights)
+
+    return 0
+
+
 def phasor_fields_reconstruction(data, central_wavelength, n_pulses, z_begin,
-                                 z_end, delta_z, xl, fH_all = None,
+                                 z_end, delta_z, xl, fH_all = None, 
                                  RSD_prop = None, analysis={}, n_threads = 1):
     
     z_grid = np.mgrid[z_begin:z_end:delta_z]
@@ -70,7 +92,8 @@ def phasor_fields_reconstruction(data, central_wavelength, n_pulses, z_begin,
                                   z_grid)).swapaxes(0, -1).swapaxes(1,2)
     
     # Extract propagators
-    if RSD_prop is None:
+    global PF_by_point
+    if RSD_prop is None and not PF_by_point:
         RSD_prop = RSD_kernel(data.sensor_grid_xyz)
 
     image = np.zeros(coords.shape[:-1], dtype = np.complex128)
@@ -78,9 +101,16 @@ def phasor_fields_reconstruction(data, central_wavelength, n_pulses, z_begin,
     # Iterate over planes
     analysis_concurrent = Manager().dict()
     analysis_concurrent['kernels used'] = 0
-    plane_rec_func = partial(__reconstruct_pf_plane, RSD_prop, wavelengths, 
-                            coords, xl, fH, freq_weights, image, z_grid, 
-                            analysis_concurrent)
+    
+    if PF_by_point:
+        plane_rec_func = partial(__reconstruct_pf_plane_by_point,
+                                 data.sensor_grid_xyz, coords, wavelengths, xl, 
+                                 fH, freq_weights, image, z_grid, 
+                                 analysis_concurrent)
+    else:
+        plane_rec_func = partial(__reconstruct_pf_plane, RSD_prop, wavelengths, 
+                                 coords, xl, fH, freq_weights, image, z_grid, 
+                                 analysis_concurrent)
 
     if n_threads > 1:
         # Concurrent

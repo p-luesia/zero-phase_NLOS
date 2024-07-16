@@ -4,8 +4,12 @@ import matplotlib.pyplot as plt
 import matplotlib
 
 from phasor_fields import phasor_fields_reconstruction, phasor_fields_filter
+from phasor_fields import set_by_point, set_planar_RSD
 from zero_phase_corrector import adaptive_z_reconstruction
 from backprojection import back_projection
+
+from argparse import ArgumentParser
+import sys
 
 
 import os
@@ -32,16 +36,36 @@ def file_parser(filename: str):
     return parsed_filename
 
 
-def rec_experiment(data, exp_info, delta_z, z_offset, central_wavelength,
+def get_z_params(exp_info):
+    # Planar reconstruction distances to the relay wall
+    z_offset = 0.5
+    if 'z_offset' in exp_info:
+        z_offset = exp_info['z_offset']
+
+    if 'z' in exp_info.keys():
+        z_begin = exp_info['z'] - z_offset
+        z_end = exp_info['z'] + z_offset
+    elif 'z_limits' in exp_info.keys():
+        z_begin, z_end = exp_info['z_limits']
+    else:
+        z_begin = 0.5; z_end = 1.5
+        print('No limits for z indicated. Using default z in range [0.5, 1.5]')
+
+    return z_begin, z_end
+
+
+def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
                      n_pulses, output_prefix, n_threads):
     """
     Reconstruct with the dense and adaptive reconstructions the data
     :param data                 : Input data from the TAL library
     :param exp_info             : Experiment information. See file_parser for 
                                   more info
+    :param z_begin              : Distance from the relay wall to start the 
+                                  reconstruction
+    :param z_end                : Distance from the relay wall to stop the 
+                                  reconstruction
     :param delta_z              : Distance between reconstruction planes
-    :param z_offset             : Distance to reconstruct from the position
-                                  indicated in exp_info. 
     :param central_wavelength   : Central wavelength of the phasor fields
                                   virtual illumination for the reconstructions
     :param n_pulses             : Number of pulses of the phasor fields
@@ -51,17 +75,12 @@ def rec_experiment(data, exp_info, delta_z, z_offset, central_wavelength,
                                   reconstruction   
     :return                     : The distances used for reconstruct                               
     """
-    xl = data.laser_grid_xyz[0,0]
-
-    # Planar reconstruction distances to the relay wall
-    if 'z' in exp_info.keys():
-        z_begin = exp_info['z'] - z_offset
-        z_end = exp_info['z'] + z_offset
-    elif 'z_limits' in exp_info.keys():
-        z_begin, z_end = exp_info['z_limits']
+    if data.laser_grid_format == tal.enums.GridFormat.N_3:
+        xl = data.laser_grid_xyz[0]
+    elif data.laser_grid_format == tal.enums.GridFormat.X_Y_3:
+        xl = data.laser_grid_xyz[0, 0]
     else:
-        z_begin = 0.5; z_end = 1.5
-        print('No limits for z indicated. Using default z in range [0.5, 1.5]')
+        raise(TypeError(f'Unknown format {data.laser_grid_format}'))
     
     starting_central_wavelength = central_wavelength*8 # 4 iterations
     ending_central_wavelength = central_wavelength
@@ -130,61 +149,152 @@ def gen_from_dir(dirname, output_dir ='./results/',
         
 def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData, 
                             exp_params: dir, output_dir: str = '',
-                            n_threads: int = 1):
-        
+                            n_threads: int = 1, reconstruct: bool = True, 
+                            plot: bool = True):
+        z_begin, z_end = get_z_params(exp_params)
         exp_file_prefix =  os.path.join(output_dir, exp_params['name'])
-        z_grid = rec_experiment(data, exp_params, 0.0001, 0.5, 0.05, 5,
-                                exp_file_prefix, n_threads)
-        # Coordinates for visualization purposes
-        V_coords = data.sensor_grid_xyz \
-            + np.array([0,0,1])*z_grid.reshape(-1, 1, 1, 1)
-        plotter = StreakPlotter(V_coords, 
-                                f'{exp_file_prefix}dense_reconstruction.npy', 
-                                f'{exp_file_prefix}max_adaptive_coords.npy',
-                                f'{exp_file_prefix}zero_phase_coords.npy', 
-                                data.hidden_depth_grid_xyz)
+        if reconstruct:
+            rec_experiment(data, z_begin, z_end, exp_params['delta_z'], 0.05, 5,
+                                    exp_file_prefix, n_threads)
+    
 
-        plot = plotter[:,0]
-        plot.outputfile = f'{exp_file_prefix}_plot.svg'
-        plot.save()
-
-
-
-
-
-if __name__ == '__main__':
-    gen_from_dir('../nlos_dataset/simple_corner/hdf5_ln_files', 
-                 output_dir='./results/simple_corners',
-                 n_threads = 12)
-
-    src = '../nlos_dataset/3d_small_planes/hdf5_ln_files/'
-    data_file = 'plane1_z[1.0]_x[0.0]_rot[0].hdf5'
-    # data_file = 'plane1_z[1.5]_x[0.0]_rot[0].hdf5'
-    # data_file = 'plane1_z[2.0]_x[0.0]_rot[0].hdf5'
-    # data_file = 'plane1_z[2.5]_x[0.0]_rot[0].hdf5'
-    # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
-    # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
-    # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
+        if plot: 
+            # Coordinates for visualization purposes
+            z_grid = np.mgrid[z_begin:z_end:exp_params['delta_z']]
+            V_coords = data.sensor_grid_xyz*np.array([1,1,0]) \
+                + np.array([0,0,1])*z_grid.reshape(-1, 1, 1, 1)
+            
+            # Set the ground truth if the data has it
+            if data.scene_info is not None and data.scene_info.shape is not None:
+                hidden_ground_truth = data.scene_info['ground_truth']['depth']
+            else:
+                hidden_ground_truth = None
+                 
+            plotter = StreakPlotter(V_coords, 
+                                    f'{exp_file_prefix}dense_reconstruction.npy', 
+                                    f'{exp_file_prefix}max_adaptive_coords.npy',
+                                    f'{exp_file_prefix}zero_phase_coords.npy', 
+                                    hidden_ground_truth)
+            plot = plotter[:,89]
+            # plot = plotter[:,0]
+            plot.outputfile = f'{exp_file_prefix}_plot.svg'
+            plot.save()
 
 
-    # src = '../nlos_dataset/simple_corner/20240617-201630/'
-    # data_file = 'plane1_rot[10]_plane2_rot[-10].hdf5'
+def parse_args(argv):
+    parser = ArgumentParser('3d_propagator',
+            description = 'Reconstruct with Phasor Fields and our Zero Phase'\
+                        + 'approach, and plot the results.')
+    parser.add_argument('capture_datafiles', nargs = '+', type = str,
+                        help = 'Input datafiles of the captures in tal hdf5'\
+                             + ' format')
+    parser.add_argument('--input_prefix', type = str, nargs = '?', 
+                        help = 'Prefix for the capture datafiles')
+    parser.add_argument('-o', '--output_dir', type = str, nargs = '*',
+                        help = 'Output directories to store the results. It '\
+                             + 'can be 1 or the same number as the input '\
+                             + 'capture datafiles')
+    parser.add_argument('--output_prefix', type = str, nargs = '?',
+                        help = 'Prefix for the output directories')
+    parser.add_argument('-z', type = float, help = 'Main depth to reconstruct '\
+                        + 'in the dense reconstruction', default = 1.0)
+    parser.add_argument('--delta_z', type = float, help = 'Distance between '\
+                        + 'planes to reconstruct in the dense reconstruction',
+                        default = 0.0001)
+    parser.add_argument('--z_offset', type = float, help = 'Distance from z '\
+                        + '(forward and backward) to reconstruct the dense'\
+                        + ' reconstruction', default = 0.3)
+    onlies_group = parser.add_mutually_exclusive_group()
+    onlies_group.add_argument('--only_plot', action = 'store_true', 
+                        help = 'If specified it will not reconstruct')
+    onlies_group.add_argument('--only_reconstruct', action = 'store_true', 
+                        help = 'If specified it will not plot the results')
+    parser.add_argument('--two_dimensions', type = slice,
+                        help = 'If indicated, it will reconstruct only with '\
+                                + 'the given indices')
+    parser.add_argument('-t', '--threads', type = int, default = 1,
+                        help = 'Number of threads to use')
+    parser.add_argument('--by_point', action = 'store_true',
+                        help = 'Performance the reconstruction point by point '\
+                             + 'instead of using the planar RSD')
+    
+    args = parser.parse_args(argv)
+    assert args.output_dir is None or len(args.output_dir) == 1 \
+            or len(args.output_dir) == len(args.capture_datafiles),\
+            'Wrong number of output directiories'
 
-    full_path = os.path.join(src, data_file)
-
-    data = tal.io.read_capture(full_path)
-
-    medium_idx = data.H.shape[2]//2
-    data.H = data.H[:,:,medium_idx:-medium_idx+1]
-    # Preprare data for the reconstruction
-    data.sensor_grid_xyz = data.sensor_grid_xyz[:,medium_idx:-medium_idx+1]
-    gt_medium_idx = data.hidden_depth_grid_xyz.shape[1]//2
-    data.hidden_depth_grid_xyz = data.hidden_depth_grid_xyz.swapaxes(0,1)[-1:0:-1,gt_medium_idx:-gt_medium_idx+1,...]
-    data.hidden_depth_grid_normals = data.hidden_depth_grid_normals.swapaxes(0,1)[-1:0:-1,:,gt_medium_idx:-gt_medium_idx+1,...]
-
-    rec_and_plot_experiment(data, {'z': 1.0, 'name': ''}, n_threads = 12)
+    return args
 
 
+def main(argv):
+    args = parse_args(argv)
+
+    # Set the prefix, input datafiles and output directories
+    input_files = args.capture_datafiles
+    if args.input_prefix is not None:
+        input_files = [args.input_prefix + file for file in input_files]
+
+    output_dir = args.output_dir
+    if output_dir is None:
+        output_dir = ['']
+    if args.output_prefix is not None:
+        output_dir = [args.output_prefix + direct for direct in output_dir]
+
+    if len(output_dir) == 1:
+        experiment_files = [(file, output_dir[0]) for file in input_files]
+    else:       # Same number of input files and output dirs
+        experiment_files = [(input_files[i], output_dir[i]) 
+                            for i in range(len(input_files))]
+
+    if len(experiment_files) == 1 and os.path.isdir(experiment_files[0][0]):
+        gen_from_dir(experiment_files[0][0], 
+                    output_dir=experiment_files[0][1],
+                    n_threads = 12)
+        exit(0)
+
+    if args.by_point:
+        set_by_point()
+
+    for full_path, output_dir in experiment_files:
+    # for id in range(268, 275 + 1):
+
+    #     src = '../nlos_dataset/2024_06_21_R_different_microdepths_U/hdf5_files'
+    #     data_file = f'capt_{id}_6_12.hdf5'
+        # data_file = 'plane1_z[1.5]_x[0.0]_rot[0].hdf5'
+        # data_file = 'plane1_z[2.0]_x[0.0]_rot[0].hdf5'
+        # data_file = 'plane1_z[2.5]_x[0.0]_rot[0].hdf5'
+        # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
+        # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
+        # data_file = 'plane1_z[1.0]_x[0.1]_rot[0].hdf5'
+
+
+        # src = '../nlos_dataset/simple_corner/20240617-201630/'
+        # data_file = 'plane1_rot[10]_plane2_rot[-10].hdf5'
+
+        # full_path = os.path.join(src, data_file)
+
+        data = tal.io.read_capture(full_path)
+
+        if args.two_dimensions is not None:
+            data.H = data.H[:,args.two_dimensions]
+            # Preprare data for the reconstruction
+            data.sensor_grid_xyz = data.sensor_grid_xyz[args.two_dimensions]
+        # # gt_medium_idx = data.hidden_depth_grid_xyz.shape[1]//2
+        # data.hidden_depth_grid_xyz = data.hidden_depth_grid_xyz.swapaxes(0,1)[-1:0:-1,gt_medium_idx:-gt_medium_idx+1,...]
+        # data.hidden_depth_grid_normals = data.hidden_depth_grid_normals.swapaxes(0,1)[-1:0:-1,:,gt_medium_idx:-gt_medium_idx+1,...]
+        # set_by_point()
+        name = os.path.realpath(full_path).split('/')[-1][:-5]
+        name = ''
+        exp_params = {'name':name, 'z': args.z, 
+                      'z_offset': args.z_offset, 'delta_z': args.delta_z}
+        print(exp_params['name'])
+
+        rec_and_plot_experiment(data, exp_params, 
+                                n_threads = args.threads, 
+                                output_dir = output_dir, 
+                                reconstruct = not args.only_plot,
+                                plot = not args.only_reconstruct)
+        # set_planar_RSD()
     # # src = '../nlos_dataset/3d_small_planes/'
     # # data_file = '2d_3_plane.hdf5'
     # # data_file = '2d_1_plane_center.hdf5'
@@ -300,3 +410,6 @@ if __name__ == '__main__':
     # # plotter[:, 0].plot()
 
 
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

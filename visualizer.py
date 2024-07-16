@@ -34,7 +34,8 @@ class StreakPlotter(object):
             matplotlib.use(self.backend)
             # Plot the results
             min_x, min_y = self.coords[0,0]
-            delta_x, delta_y = self.coords[1,1] - self.coords[0,0]
+            delta_x, delta_y = (self.coords[-1,-1] - self.coords[0,0])\
+                                /self.coords.shape[-2::-1]
 
             plotify = lambda d: ((d[:, 0] - min_x) / delta_x,
                                  (d[:, 1] - min_y) / delta_y) 
@@ -64,6 +65,7 @@ class StreakPlotter(object):
             ax[0].set_title('Amplitude')
             ax[0].imshow(np.abs(self.dense_V), cmap = 'hot', 
                          interpolation='nearest', aspect='auto')
+            ax[0].set_ylim([0, self.dense_V.shape[0]])
             ytick_label = ax[0].get_yticks().astype(int) * delta_y + min_y
             ax[0].set_yticklabels(["{:0.4f}".format(tick) for tick in ytick_label] )
             if self.ground_truth is not None:
@@ -114,7 +116,7 @@ class StreakPlotter(object):
         self.adaptive_max_V = np.load(adaptive_max_V_path).reshape(shape + (3,))
         self.adaptive_zero_phase_V = np.load(adaptive_zero_phase_V_path)\
                                         .reshape(shape + (3,))
-        if ground_truth is not None:
+        if ground_truth is not None and ground_truth.shape is not None:
             xv = np.linspace(np.min(self.coords[0,:,0,0]), 
                              np.max(self.coords[0,:,0,0]), 
                              ground_truth.shape[0], 
@@ -139,6 +141,13 @@ class StreakPlotter(object):
         elif not type(idx) == tuple:
             idx = (idx,slice(None,None,None))
 
+        # Something is weird with the order of the coordinates in the 3d case
+        aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V
+        aux_adaptive_max_V = self.adaptive_max_V
+        if self.adaptive_zero_phase_V.ndim == 3:
+            aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V[:,:,[1,0,2]]
+            aux_adaptive_max_V = self.adaptive_max_V[:,:,[1,0,2]]
+
 
         query_coords_3d = self.coords[(slice(None,None,None),) + idx]
         if self.ground_truth:
@@ -148,6 +157,6 @@ class StreakPlotter(object):
 
         return StreakPlotter.SubPlotter2D(query_coords_3d[..., cardinal_coords_idx],
                                       self.dense_V[(slice(None,None,None),) + idx],
-                                      self.adaptive_max_V[idx][..., cardinal_coords_idx],
-                                      self.adaptive_zero_phase_V[idx][...,cardinal_coords_idx],
+                                      aux_adaptive_max_V[idx][..., cardinal_coords_idx],
+                                      aux_adaptive_zero_phase_V[idx][...,cardinal_coords_idx],
                                       query_ground_truth)
