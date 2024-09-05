@@ -55,7 +55,7 @@ def get_z_params(exp_info):
 
 
 def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
-                     n_pulses, output_prefix, n_threads):
+                     n_pulses, n_zp_it, output_prefix, no_dense, n_threads):
     """
     Reconstruct with the dense and adaptive reconstructions the data
     :param data                 : Input data from the TAL library
@@ -70,7 +70,11 @@ def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
                                   virtual illumination for the reconstructions
     :param n_pulses             : Number of pulses of the phasor fields
                                   virtual illumination for the reconstruction
+    :param n_zp_it              : Number of iterations of the zero phase 
+                                  algorithm
     :param output_prefix        : Output file prefix to save the results
+    :param no_dense             : If true, it will not perform the dense
+                                  reconstruction
     :param n_threads            : Number of threads to use during the 
                                   reconstruction   
     :return                     : The distances used for reconstruct                               
@@ -82,13 +86,14 @@ def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
     else:
         raise(TypeError(f'Unknown format {data.laser_grid_format}'))
     
-    starting_central_wavelength = central_wavelength*8 # 4 iterations
+    starting_central_wavelength = central_wavelength * 2**(n_zp_it-1)
     ending_central_wavelength = central_wavelength
 
     # Reconstruction of the dense
-    dense_V = phasor_fields_reconstruction(data, ending_central_wavelength, 
-                                           n_pulses, z_begin, z_end, delta_z, 
-                                           xl, n_threads = n_threads)
+    if not no_dense:
+        dense_V = phasor_fields_reconstruction(data, ending_central_wavelength, 
+                                            n_pulses, z_begin, z_end, delta_z, 
+                                            xl, n_threads = n_threads)
     # Reconstruct with the adaptive reconstruction
     result_coordinates = adaptive_z_reconstruction(data,
                                                    starting_central_wavelength,
@@ -98,7 +103,8 @@ def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
         
     max_coords_V, zero_phase_point = result_coordinates
 
-    np.save(f'{output_prefix}dense_reconstruction', dense_V)
+    if not no_dense:
+        np.save(f'{output_prefix}dense_reconstruction', dense_V)
     np.save(f'{output_prefix}max_adaptive_coords', max_coords_V)
     np.save(f'{output_prefix}zero_phase_coords', zero_phase_point)
 
@@ -147,15 +153,18 @@ def gen_from_dir(dirname, output_dir ='./results/',
         plot.save()
 
         
-def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData, 
-                            exp_params: dir, output_dir: str = '',
-                            n_threads: int = 1, reconstruct: bool = True, 
+def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData,
+                            exp_params: dir, c_wavelength: float = 0.05, 
+                            n_cycles: float = 5, n_zp_it = 3,
+                            output_dir: str = '', n_threads: int = 1,
+                            no_dense: bool = False, reconstruct: bool = True,
                             plot: bool = True):
         z_begin, z_end = get_z_params(exp_params)
         exp_file_prefix =  os.path.join(output_dir, exp_params['name'])
         if reconstruct:
-            rec_experiment(data, z_begin, z_end, exp_params['delta_z'], 0.05, 5,
-                                    exp_file_prefix, n_threads)
+            rec_experiment(data, z_begin, z_end, exp_params['delta_z'], 
+                           c_wavelength, n_cycles, n_zp_it, exp_file_prefix,
+                           no_dense, n_threads)
     
 
         if plot: 
@@ -175,7 +184,7 @@ def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData,
                                     f'{exp_file_prefix}max_adaptive_coords.npy',
                                     f'{exp_file_prefix}zero_phase_coords.npy', 
                                     hidden_ground_truth)
-            plot = plotter[:,89]
+            plot = plotter[:, 89]
             # plot = plotter[:,0]
             plot.outputfile = f'{exp_file_prefix}_plot.svg'
             plot.save()
@@ -209,6 +218,8 @@ def parse_args(argv):
                         help = 'If specified it will not reconstruct')
     onlies_group.add_argument('--only_reconstruct', action = 'store_true', 
                         help = 'If specified it will not plot the results')
+    parser.add_argument('--no_dense', action = 'store_true',
+                        help = 'Do not use the dense reconstruction')
     parser.add_argument('--two_dimensions', type = slice,
                         help = 'If indicated, it will reconstruct only with '\
                                 + 'the given indices')
@@ -217,6 +228,15 @@ def parse_args(argv):
     parser.add_argument('--by_point', action = 'store_true',
                         help = 'Performance the reconstruction point by point '\
                              + 'instead of using the planar RSD')
+    parser.add_argument('--c_wavelength', type = float, default = 0.05,
+                         help = 'Central wavelength for the reconstructions. '\
+                         + 'Default is 0.5')
+    parser.add_argument('--n_cycles', type = float, default = 5,
+                         help = 'Number of the number of cycles of the '\
+                         + 'illumination package. Default is 5')
+    parser.add_argument('--zero_phase_it', type = int, default = 3,
+                         help = 'Number of the iterations of the zero phase '\
+                         + 'approach. Default is 3')
     
     args = parser.parse_args(argv)
     assert args.output_dir is None or len(args.output_dir) == 1 \
@@ -275,6 +295,9 @@ def main(argv):
 
         data = tal.io.read_capture(full_path)
 
+        data.laser_grid_xyz = -data.laser_grid_xyz*np.array([0,1,0]) + data.laser_grid_xyz*np.array([1,0,1])
+        data.H = data.H
+
         if args.two_dimensions is not None:
             data.H = data.H[:,args.two_dimensions]
             # Preprare data for the reconstruction
@@ -290,8 +313,12 @@ def main(argv):
         print(exp_params['name'])
 
         rec_and_plot_experiment(data, exp_params, 
+                                c_wavelength= args.c_wavelength, 
+                                n_cycles = args.n_cycles,
+                                n_zp_it = args.zero_phase_it,
                                 n_threads = args.threads, 
                                 output_dir = output_dir, 
+                                no_dense = args.no_dense,
                                 reconstruct = not args.only_plot,
                                 plot = not args.only_reconstruct)
         # set_planar_RSD()
@@ -413,3 +440,4 @@ def main(argv):
 
 if __name__ == '__main__':
     main(sys.argv[1:])
+

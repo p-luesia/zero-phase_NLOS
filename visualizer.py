@@ -36,7 +36,6 @@ class StreakPlotter(object):
             min_x, min_y = self.coords[0,0]
             delta_x, delta_y = (self.coords[-1,-1] - self.coords[0,0])\
                                 /self.coords.shape[-2::-1]
-
             plotify = lambda d: ((d[:, 0] - min_x) / delta_x,
                                  (d[:, 1] - min_y) / delta_y) 
             
@@ -144,9 +143,9 @@ class StreakPlotter(object):
         # Something is weird with the order of the coordinates in the 3d case
         aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V
         aux_adaptive_max_V = self.adaptive_max_V
-        if self.adaptive_zero_phase_V.ndim == 3:
-            aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V[:,:,[1,0,2]]
-            aux_adaptive_max_V = self.adaptive_max_V[:,:,[1,0,2]]
+        # if self.adaptive_zero_phase_V.ndim == 3:
+        #     aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V[:,:,[1,0,2]]
+        #     aux_adaptive_max_V = self.adaptive_max_V[:,:,[1,0,2]]
 
 
         query_coords_3d = self.coords[(slice(None,None,None),) + idx]
