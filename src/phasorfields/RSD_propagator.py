@@ -37,13 +37,6 @@ class RSD_kernel(object):
         delta_grid_dist = max_grid_dist / origin_grid.shape[:-1]
 
         # Slices for mgrid of dimensions depending on the origin grid
-        # slices_idx = [slice(-max_i+ delta_i, max_i , delta_i-1e-5)
-        #               if not delta_i == 0 else slice(0, 1, 2)
-        #               for max_i, delta_i in zip(max_grid_dist, delta_grid_dist)]
-        # # Return the coordinates for the kernel
-        # return np.array(np.mgrid[slices_idx + [slice(0, 1, 2)]])\
-        #             .swapaxes(0, -1)[0].copy()
-        # Slices for mgrid of dimensions depending on the origin grid
         slices_idx = [slice(1, 2*max_i , 1)
                       if max_i > 1 else slice(0, 1, 2)
                       for max_i in origin_grid.shape[:-1]]

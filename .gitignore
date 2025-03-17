@@ -2,6 +2,7 @@ __pycache__/
 results/
 *.svg
 *.npy
+*.hdf5
 
 time_zerophase
 

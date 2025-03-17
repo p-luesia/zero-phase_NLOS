@@ -124,8 +124,15 @@ class StreakPlotter(object):
                              np.max(self.coords[0,0,:,1]), 
                              ground_truth.shape[1], 
                              endpoint=True)
+            if yv[0] == yv[-1]:
+                yv = xv[::-1]
+                xv = xv[::-1]
+            
+            # mask_gt = np.ma.masked_where(ground_truth[:,:,2] < 1.15, ground_truth[:,:,2])
+            # plt.imshow(mask_gt)
+            # plt.show()
             self.ground_truth = RegularGridInterpolator((xv, yv),
-                                                        ground_truth[:,:,2],
+                                                        ground_truth[:,:,2].swapaxes(0,1),
                                                         method="nearest")
         else:
             self.ground_truth = None
@@ -146,7 +153,6 @@ class StreakPlotter(object):
         # if self.adaptive_zero_phase_V.ndim == 3:
         #     aux_adaptive_zero_phase_V = self.adaptive_zero_phase_V[:,:,[1,0,2]]
         #     aux_adaptive_max_V = self.adaptive_max_V[:,:,[1,0,2]]
-
 
         query_coords_3d = self.coords[(slice(None,None,None),) + idx]
         if self.ground_truth:
