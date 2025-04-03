@@ -3,9 +3,10 @@ from .RSD_propagator import RSD_kernel
 from tal.io import NLOSCaptureData
 import numpy as np
 
+import tal
+
 def reconstruct(data:NLOSCaptureData, central_wavelength:float, n_cycles:float,
-                z_begin:float, z_end:float, delta_z:float, xl:np.ndarray = None, 
-                fH_all: np.ndarray = None, RSD_prop: RSD_kernel = None, 
+                z_v: np.ndarray, xl:np.ndarray = None, 
                 analysis:dict = {}, n_threads:int = 1):
     """
     Given data, it reconstruct parallel planes starting at z_begin
@@ -18,9 +19,7 @@ def reconstruct(data:NLOSCaptureData, central_wavelength:float, n_cycles:float,
     :param n_cycles:            Number of cycles of the central wavelength of 
                                 the gaussian illumination function for Phasor
                                 Fields. It defines the width of the pulse.
-    :param z_begin:             Beginning distance of the planes to reconstruct.
-    :param z_end:               End distance of the planes to reconstruct.
-    :param delta_z:             Distance between planes to reconstruct.
+    :param z_v:                 Distances to the planes to reconstruct
     :param xl:                  Location of a single illumination point. It can
                                 be not used if data capture is confocal.
     :param fH_all:              Impulse response previously filtered by the 
@@ -32,6 +31,14 @@ def reconstruct(data:NLOSCaptureData, central_wavelength:float, n_cycles:float,
                                 reconstruction.
     :params n_threads:          Number of threads to use for the reconstruction.
     """
+    V = tal.reconstruct.get_volume_project_rw(data, z_v)
+    tal.set_resources(cpu_processes = n_threads)
+    solution =  tal.reconstruct.pf.solve(data,
+                                        central_wavelength, n_cycles,
+                                        camera_system=\
+                                            tal.enums.CameraSystem.DIRECT_LIGHT,
+                                        volume = V )
+    return np.moveaxis(solution, 2, 0)
     return phasor_fields_reconstruction(data, central_wavelength, n_cycles,
                                         z_begin, z_end, delta_z, xl, fH_all, 
                                         RSD_prop, analysis, n_threads) 

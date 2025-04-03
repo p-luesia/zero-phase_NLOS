@@ -1,7 +1,7 @@
 import numpy as np
 
-from phasorfields.RSD_propagator import RSD_kernel
-from phasorfields import reconstruct
+from .phasorfields.RSD_propagator import RSD_kernel
+from .phasorfields import reconstruct
 
 from scipy.optimize import curve_fit
 from scipy.interpolate import RegularGridInterpolator
@@ -151,69 +151,51 @@ def cluster_depths(query_z, delta_z):
     cluster_z[-1,1] = sorted_q[-1]
     return cluster_z
 
+def cluster_and_filter(query_z, delta_z):
+    clustered_depths = cluster_depths(query_z, delta_z)
+    depths = np.ndarray((0,), dtype = float)
+    for z_b, z_e in clustered_depths:
+        depths = np.append(depths, np.mgrid[z_b:z_e+delta_z:delta_z])
+    return depths
+
 
 def adaptive_z_reconstruction(data, starting_wavelength, final_wavelength, 
                               n_pulses, z_begin, z_end, xl, 
                               n_threads = 1, analysis_result = {}):
     current_wavelength = starting_wavelength
-    # Delete below
-    # print('Warning, only using final_wavelength')
-    # current_wavelength = final_wavelength
-    # Delete above
     z_coords = np.mgrid[z_begin:z_end:current_wavelength/3]
 
     reconstructed_voxels = 0
     iterations = 0
     kernels = 0
     sensor_grid = data.sensor_grid_xyz
-    RSD_prop = RSD_kernel(data.sensor_grid_xyz)
-
 
     while current_wavelength >= final_wavelength:
         # Grid dependent of wavelength
         expected_wavelength = current_wavelength/2
         # Smaller sample to avoid matching 
-        delta_z_wl = expected_wavelength * 0.7
-        cluster_planes = cluster_depths(z_coords, delta_z_wl)
+        delta_z_wl = current_wavelength / 3
         print(f'Reconstructing with centralwavelength {current_wavelength}')
+        depths_v = cluster_and_filter(z_coords, delta_z_wl)
 
-        # Reconstruct all the indicated planes
-        V = np.zeros((0,) + sensor_grid.shape[:-1], dtype=np.complex128)
-        z_grid = np.array([])
+        # Reconstruct all the indicated planes       
+        V = reconstruct(data, current_wavelength, n_pulses,
+                        depths_v, xl, n_threads = n_threads )
+        
 
-        fH_all = np.fft.fft(data.H, axis = 0)
-
-        for z_b, z_e in cluster_planes:
-            if z_e < z_begin or z_b > z_end:   # Outside reconstruction area
-                continue
-            if z_b < z_begin:
-                z_b = z_begin
-            if z_e > z_end:
-                z_e = z_end
-
-            pf_analysis = {}
-            V_local = reconstruct(data, current_wavelength, 
-                                    n_pulses, z_b, z_e, 
-                                    delta_z_wl, xl, 
-                                    RSD_prop=RSD_prop,
-                                    fH_all = fH_all,
-                                    n_threads = n_threads,
-                                    analysis = pf_analysis)
-            V = np.append(V, V_local, axis = 0)
-            z_grid = np.append(z_grid, np.mgrid[z_b:z_e:delta_z_wl])
         
         if np.max(V) == 0:
             print('No geometry found!')
-            return (np.zeros(data.sensor_grid_xyz.shape),)*2
-        coords = data.sensor_grid_xyz[np.newaxis, ...]*np.array([1.0,1.0,0.0]) \
-                    + np.array([0,0,1.0])*z_grid.reshape(-1,1,1,1)
+            return (np.zeros(sensor_grid.shape),)*2
+        coords = sensor_grid[np.newaxis, ...]*np.array([1.0,1.0,0.0]) \
+                    + np.array([0,0,1.0])*depths_v.reshape(-1,1,1,1)
         max_coords, zero_phase_coords, mask = phase_corrector(V, coords,
                                                         expected_wavelength, xl)
         current_wavelength /= 2
         z_coords = zero_phase_coords[..., 2].reshape(-1)[mask.reshape(-1)]
         iterations += 1
-        reconstructed_voxels += pf_analysis['reconstructed voxels']
-        kernels += pf_analysis['kernels used']
+        # reconstructed_voxels += pf_analysis['reconstructed voxels']
+        # kernels += pf_analysis['kernels used']
 
     analysis_result['reconstructed voxels'] = reconstructed_voxels
     analysis_result['iterations'] = iterations

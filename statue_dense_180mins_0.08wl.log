@@ -1,0 +1,16 @@
+Loading ..\nlos_dataset\fk_dataset_parsed2tal\statue_meas_180min.hdf5...
+Loaded
+Shifting 0 time bins
+Results will be stored in .\results\fk_migration\
+Reconstructing 0.0 planes with 0.0001 m between them...tal.reconstruct.utils: Assuming that volume_xyz is X_Y_Z_3
+Applying the filter
+tal.reconstruct.pf.phasor_fields: Configuring the PF propagator.
+tal.reconstruct.utils: Assuming that volume_xyz is X_Y_Z_3
+tal.util.can_parallel_convolution: Using sensor
+tal.util.can_parallel_convolution: Taking first slide of the volume
+tal.reconstruct.utils: Assuming that volume_xyz is X_Y_Z_3
+tal.util.can_parallel_convolution: Using laser
+tal.util.can_parallel_convolution: Not enough histograms
+tal.reconstruct.pf.phasor_fields.configure: Using sensor propagator Planar RSD propagator squared.
+tal.reconstruct.pf.phasor_fields.configure: Using laser propagator Not defined propagator.
+tal.reconstruct.pf.phasor_fields.configure: Reconstruction at t=0

@@ -3,9 +3,9 @@ import tal
 import matplotlib.pyplot as plt
 import matplotlib
 
-from phasorfields import reconstruct
-from zero_phase_corrector import adaptive_z_reconstruction
-from backprojection import back_projection
+from .phasorfields import reconstruct
+from .zero_phase_corrector import adaptive_z_reconstruction
+from .backprojection import back_projection
 
 from argparse import ArgumentParser
 import sys
@@ -18,7 +18,7 @@ import os
 
 import time
 
-from visualizer import StreakPlotter
+from .visualizer import StreakPlotter
     
 
 def params_from_filename(filename: str):
@@ -91,11 +91,12 @@ def rec_experiment(data, z_begin, z_end, delta_z, central_wavelength,
 
     # Reconstruction of the dense
     if not no_dense:
-        print(f'Reconstructing {int((z_begin-z_end)/delta_z)} planes with {delta_z} m between them...', 
+        print(f'Reconstructing {int((z_end-z_begin))/delta_z} planes with {delta_z} m between them...', 
               flush=True, end="")
         t_start = timer()
+        z_v = np.mgrid[z_begin:z_end:delta_z]
         dense_V = reconstruct(data, ending_central_wavelength, 
-                            n_pulses, z_begin, z_end, delta_z, 
+                            n_pulses, z_v, 
                             xl, n_threads = n_threads)
         t_end = timer()
         print(f'Done. It took {timedelta(seconds=t_end-t_start)} segs')
@@ -181,7 +182,7 @@ def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData,
                                     hidden_ground_truth)
                                     
             # plot = plotter[:, 128]
-            plot = plotter[:, 95]
+            plot = plotter[:, V_coords.shape[2]//2]
             # plot = plotter[256]
             # plot = plotter[:,0]
             plot.outputfile = f'{exp_file_prefix}_plot.svg'
@@ -189,7 +190,7 @@ def rec_and_plot_experiment(data: tal.io.capture_data.NLOSCaptureData,
 
 
 def parse_args(argv):
-    parser = ArgumentParser('3d_propagator',
+    parser = ArgumentParser('zppf_reconstruction.py',
             description = 'Reconstruct with Phasor Fields and our Zero Phase'\
                         + 'approach, and plot the results.')
     parser.add_argument('capture_datafiles', nargs = '+', type = str,
@@ -303,6 +304,10 @@ def main(argv):
         data = tal.io.read_capture(i_file)
         print('Loaded')
 
+
+        if data.is_confocal() and 'args' in data.scene_info and 'command' in data.scene_info['args']:
+            tal.reconstruct.compensate_laser_cos_dsqr(data)
+
         print(f'Shifting {args.t_shift} time bins')
         data.H = np.roll(data.H, args.t_shift, axis = 0)
 
@@ -331,64 +336,6 @@ def main(argv):
                                 no_dense = args.no_dense,
                                 reconstruct = not args.only_plot,
                                 plot = not args.only_reconstruct)
-
-    # Set the prefix, input datafiles and output directories
-#     input_files = args.capture_datafiles
-#     if args.input_prefix is not None:
-#         input_files = [args.input_prefix + file for file in input_files]
-
-#     output_dir = args.output_dir
-#     if output_dir is None:
-#         output_dir = ['']
-#     if args.output_prefix is not None:
-#         output_dir = [args.output_prefix + direct for direct in output_dir]
-
-#     if len(output_dir) == 1:
-#         experiment_files = [(file, output_dir[0]) for file in input_files]
-#     else:       # Same number of input files and output dirs
-#         experiment_files = [(input_files[i], output_dir[i]) 
-#                             for i in range(len(input_files))]
-
-#     if len(experiment_files) == 1 and os.path.isdir(experiment_files[0][0]):
-#         gen_from_dir(experiment_files[0][0], 
-#                     output_dir=experiment_files[0][1],
-#                     delta_z = args.delta_z,
-#                     n_zp_it = args.zero_phase_it,
-#                     no_dense = args.no_dense,
-#                     reconstruct = not args.only_plot,
-#                     n_threads = args.threads)
-#         exit(0)
-
-#     if args.by_point:
-#         set_by_point()
-
-#     for full_path, output_dir in experiment_files:
-
-#         data = tal.io.read_capture(full_path)
-
-#         data.H = data.H.swapaxes(1,2)
-
-#         if args.two_dimensions is not None:
-#             data.H = data.H[:,args.two_dimensions]
-#             # Preprare data for the reconstruction
-#             data.sensor_grid_xyz = data.sensor_grid_xyz[args.two_dimensions]
-
-
-#         name = os.path.realpath(full_path).split('/')[-1][:-5]
-#         name = ''
-#         exp_params = {'name':name, 'z': args.z, 
-#                       'z_offset': args.z_offset, 'delta_z': args.delta_z}
-#         print(exp_params['name'])
-
-#         rec_and_plot_experiment(data, exp_params, 
-#                                 c_wavelength= args.c_wavelength, 
-#                                 n_cycles = args.n_cycles,
-#                                 n_zp_it = args.zero_phase_it,
-#                                 n_threads = args.threads, 
-#                                 output_dir = output_dir, 
-#                                 no_dense = args.no_dense,
-#                                 reconstruct = not args.only_plot,
-#                                 plot = not args.only_reconstruct)
 
 
 
